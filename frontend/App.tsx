@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { AnalysisResult, AnalysisStatus } from './types';
 import LandingPage from './components/LandingPage';
 import AnalysisPage from './components/AnalysisPage';
@@ -7,57 +7,8 @@ import ResultsPage from './components/ResultsPage';
 import GeneratorPage from './components/GeneratorPage';
 import HistoryPage from './components/HistoryPage';
 import ScriptsPage from './components/ScriptsPage';
+import Navigation from './components/Navigation';
 import { getHistory, getAnalysis } from './api';
-
-// Компонент для навигации
-const Navigation: React.FC<{ theme: 'light' | 'dark'; toggleTheme: () => void }> = ({ theme, toggleTheme }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  return (
-    <nav className="border-b border-black/5 dark:border-white/5 bg-white/40 dark:bg-black/40 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-        <div 
-          className="flex items-center gap-3 cursor-pointer group"
-          onClick={() => navigate('/')}
-        >
-          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 via-purple-600 to-pink-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg group-hover:scale-105 transition-all duration-300">
-            V
-          </div>
-          <div className="flex flex-col">
-            <span className="font-extrabold text-xl leading-none tracking-tight text-slate-900 dark:text-white">ViralDNA</span>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-purple-500 font-bold">Intelligence</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-6">
-          <div className="hidden md:flex items-center gap-8">
-            <button 
-              onClick={() => navigate('/history')}
-              className={`text-sm font-bold transition-all hover:text-purple-500 ${location.pathname === '/history' ? 'text-purple-500' : 'text-gray-500'}`}
-            >
-              История
-            </button>
-          </div>
-
-          <button 
-            onClick={toggleTheme}
-            className="w-10 h-10 rounded-full glass flex items-center justify-center hover:scale-110 transition-all text-xl"
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
-
-          <button 
-            onClick={() => navigate('/analyze')}
-            className="bg-purple-600 dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-2xl text-sm font-black hover:scale-105 transition-all active:scale-95 shadow-lg"
-          >
-            Новый анализ
-          </button>
-        </div>
-      </div>
-    </nav>
-  );
-};
 
 // Компонент для работы с анализом
 const AnalysisWrapper: React.FC<{ onComplete: (res: AnalysisResult) => void }> = ({ onComplete }) => {
@@ -221,8 +172,18 @@ const AppContent: React.FC = () => {
         </Routes>
       </main>
       
-      <footer className="border-t border-black/5 dark:border-white/5 py-12 text-center">
-        <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">&copy; 2024 ViralDNA Intelligence • Premium Content AI</p>
+      <footer className="border-t border-black/5 dark:border-white/5 py-12 mt-20">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">
+              &copy; 2024 ViralDNA Intelligence • Premium Content AI
+            </p>
+            <div className="flex items-center gap-6 text-xs text-gray-400">
+              <span className="hover:text-brand-600 transition-colors cursor-pointer">Документация</span>
+              <span className="hover:text-brand-600 transition-colors cursor-pointer">Поддержка</span>
+            </div>
+          </div>
+        </div>
       </footer>
     </div>
   );

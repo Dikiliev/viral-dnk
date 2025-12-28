@@ -116,6 +116,60 @@
       content: '...';
       animation: typing-dots 1.5s infinite;
     }
+
+    /* Animations */
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slide-in-from-bottom {
+      from { 
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-in {
+      animation: fade-in 0.5s ease-out;
+    }
+
+    .fade-in {
+      animation: fade-in 0.5s ease-out;
+    }
+
+    .slide-in-from-bottom-4 {
+      animation: slide-in-from-bottom 0.5s ease-out;
+    }
+
+    /* Smooth scrolling */
+    html {
+      scroll-behavior: smooth;
+    }
+
+    /* Selection */
+    ::selection {
+      background-color: rgba(139, 92, 246, 0.3);
+    }
+
+    /* No scrollbar */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Focus visible */
+    *:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
   </style>
 <script type="importmap">
 {

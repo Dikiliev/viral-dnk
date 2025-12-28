@@ -8,7 +8,6 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  // Показываем только новый сценарий, который создается сейчас
   const [currentScript, setCurrentScript] = useState<{ scriptId: string; segments: ScriptSegment[] } | null>(null);
 
   const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
@@ -21,17 +20,14 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
     try {
       const { scriptId, segments } = await generateScript(topic, analysis.id);
       
-      // Устанавливаем только новый сценарий
       setCurrentScript({ scriptId, segments });
       
-      // Обновляем analysis на бекенде, но не показываем старые сценарии
       const updated: AnalysisResult = {
         ...analysis,
         generatedScripts: [{ scriptId, topic, content: segments }, ...(analysis.generatedScripts || [])]
       };
       onUpdate(updated);
       
-      // Очищаем поле ввода после успешной генерации
       setTopic('');
     } catch (e) {
       console.error(e);
@@ -63,7 +59,6 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
     try {
       const updatedSegment = await generateMediaForSegment(currentScript.scriptId, segment.id);
       
-      // Обновляем текущий сценарий
       setCurrentScript(prev => {
         if (!prev) return null;
         const newSegments = [...prev.segments];
@@ -74,7 +69,6 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
         return { ...prev, segments: newSegments };
       });
 
-      // Обновляем analysis с новыми данными
       const updated: AnalysisResult = {
         ...analysis,
         generatedScripts: analysis.generatedScripts.map(s => {
@@ -109,31 +103,46 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
   const hasScripts = allScripts.length > 0;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-16 py-8">
-      {/* Header section */}
-      <div className="text-center space-y-8">
-        <div className="space-y-3">
-          <h2 className="text-5xl font-[900] tracking-tight text-slate-900 dark:text-white">Сценарий</h2>
-          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.3em]">Neural Content Studio</p>
+    <div className="max-w-5xl mx-auto space-y-12 sm:space-y-16 py-6 sm:py-8 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="text-center space-y-6 sm:space-y-8">
+        <div className="space-y-2 sm:space-y-3">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-[900] tracking-tight text-slate-900 dark:text-white">Сценарий</h2>
+          <p className="text-slate-500 font-bold uppercase text-[9px] sm:text-[10px] tracking-[0.3em]">Neural Content Studio</p>
         </div>
         
-        <form onSubmit={handleGenerate} className="max-w-2xl mx-auto flex flex-col md:flex-row gap-2 p-2 glass rounded-[24px]">
-          <input 
-            type="text" 
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="О чем будет ваш новый ролик?" 
-            className="flex-1 px-6 py-3 text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent border-none outline-none focus:outline-none focus:ring-0"
-          />
-          <button 
-            type="submit"
-            disabled={isGenerating || !topic.trim()}
-            className="bg-brand-600 text-white px-8 py-3 rounded-[16px] font-bold hover:bg-brand-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isGenerating ? 'Пишем...' : 'Создать'}
-          </button>
+        {/* Form */}
+        <form onSubmit={handleGenerate} className="max-w-2xl mx-auto">
+          <div className="flex flex-col md:flex-row gap-2 p-2 glass rounded-[20px] sm:rounded-[24px] hover:border-brand-500/30 transition-all focus-within:border-brand-500/50">
+            <input 
+              type="text" 
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="О чем будет ваш новый ролик?" 
+              className="flex-1 px-4 sm:px-6 py-2.5 sm:py-3 text-base sm:text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent border-none outline-none focus:outline-none focus:ring-0"
+              disabled={isGenerating}
+            />
+            <button 
+              type="submit"
+              disabled={isGenerating || !topic.trim()}
+              className="bg-brand-600 text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-[14px] sm:rounded-[16px] font-bold hover:bg-brand-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Создание...</span>
+                </>
+              ) : (
+                <>
+                  <span>✨</span>
+                  <span>Создать</span>
+                </>
+              )}
+            </button>
+          </div>
         </form>
         
+        {/* Loading State */}
         {isGenerating && (
           <div className="max-w-2xl mx-auto mt-8">
             <div className="glass rounded-[24px] p-8 text-center space-y-4">
@@ -146,11 +155,14 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
                 <span className="typing-animation">Пишем сценарий</span>
                 <span className="typing-dots inline-block w-6 text-left"></span>
               </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+                ИИ анализирует ДНК успеха и создает уникальный контент. Это может занять несколько минут.
+              </p>
             </div>
           </div>
         )}
 
-        {/* Кнопка для просмотра всех сценариев */}
+        {/* View All Scripts Button */}
         {hasScripts && !currentScript && (
           <div className="max-w-2xl mx-auto">
             <button
@@ -170,34 +182,34 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
                   </p>
                 </div>
               </div>
-              <span className="text-brand-600 group-hover:translate-x-1 transition-transform">→</span>
+              <span className="text-brand-600 group-hover:translate-x-1 transition-transform text-xl">→</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Показываем только текущий создаваемый сценарий */}
+      {/* Current Script */}
       {currentScript && (
-        <div className="relative space-y-12">
+        <div className="relative space-y-8 sm:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {/* Timeline Backbone */}
-          <div className="absolute left-[39px] top-4 bottom-4 w-px bg-slate-200 dark:bg-white/10 hidden sm:block"></div>
+          <div className="absolute left-[29px] sm:left-[39px] top-4 bottom-4 w-px bg-slate-200 dark:bg-white/10 hidden sm:block"></div>
 
           {currentScript.segments.map((segment, i) => {
             const status = segment.media?.status || 'idle';
             const isLoading = status.startsWith('generating');
 
             return (
-              <div key={segment.id || i} className="flex gap-8 items-start group">
+              <div key={segment.id || i} className="flex gap-4 sm:gap-8 items-start group">
                 {/* Timeline Column */}
-                <div className="w-20 shrink-0 flex flex-col items-center pt-2">
-                  <div className="relative z-10 w-4 h-4 rounded-full bg-white dark:bg-brand-dark border-2 border-brand-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
-                  <div className="mono text-[10px] font-bold text-slate-400 mt-3">{segment.timeframe}</div>
+                <div className="w-16 sm:w-20 shrink-0 flex flex-col items-center pt-2">
+                  <div className="relative z-10 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white dark:bg-brand-dark border-2 border-brand-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
+                  <div className="mono text-[9px] sm:text-[10px] font-bold text-slate-400 mt-2 sm:mt-3">{segment.timeframe}</div>
                 </div>
 
                 {/* Content Area */}
-                <div className="flex-1 space-y-6">
-                  <div className="glass p-8 rounded-[32px] hover:border-brand-500/30 transition-all duration-500 group-hover:translate-x-1">
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                <div className="flex-1 space-y-4 sm:space-y-6">
+                  <div className="glass p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] hover:border-brand-500/30 transition-all duration-500 group-hover:translate-x-1">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10">
                       <div className="lg:col-span-4 space-y-4">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500">Визуальный план</span>
                         <p className="text-sm font-medium text-slate-500 leading-relaxed italic">
@@ -217,7 +229,7 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
                       {status === 'idle' && (
                         <button 
                           onClick={() => handleRenderScene(i, segment)}
-                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20"
+                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
                         >
                           🎬 Предпросмотр
                         </button>
@@ -260,8 +272,8 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
                               <p className="text-xs text-slate-500 font-medium">Контент сгенерирован ИИ-моделями VEO 3.1 и Gemini TTS.</p>
                             </div>
                             <div className="flex gap-2">
-                              <button onClick={() => playScene(i)} className="px-6 py-2 bg-brand-600 text-white rounded-[12px] text-xs font-bold">Смотреть</button>
-                              <a href={segment.media!.videoUrl} download className="px-6 py-2 glass rounded-[12px] text-xs font-bold text-slate-500">MP4</a>
+                              <button onClick={() => playScene(i)} className="px-6 py-2 bg-brand-600 text-white rounded-[12px] text-xs font-bold hover:bg-brand-700 transition-all">Смотреть</button>
+                              <a href={segment.media!.videoUrl} download className="px-6 py-2 glass rounded-[12px] text-xs font-bold text-slate-500 hover:border-brand-500/30 transition-all">MP4</a>
                             </div>
                           </div>
                         </div>
@@ -275,9 +287,9 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
         </div>
       )}
 
-      {/* Пустое состояние - нет сценариев */}
+      {/* Empty State */}
       {!currentScript && !hasScripts && (
-        <div className="text-center py-20">
+        <div className="text-center py-20 animate-in fade-in duration-500">
           <div className="text-6xl mb-6 opacity-20">📝</div>
           <h3 className="text-2xl font-bold text-slate-400 mb-2">Создайте первый сценарий</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
