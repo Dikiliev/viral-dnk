@@ -1,8 +1,10 @@
-
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnalysisResult } from '../types';
 
 const HistoryPage: React.FC<{ items: AnalysisResult[]; onSelect: (res: AnalysisResult) => void }> = ({ items, onSelect }) => {
+  const navigate = useNavigate();
+
   return (
     <div className="max-w-5xl mx-auto py-8 space-y-12 animate-in fade-in duration-700">
       <div className="space-y-3 text-center md:text-left">
@@ -19,53 +21,97 @@ const HistoryPage: React.FC<{ items: AnalysisResult[]; onSelect: (res: AnalysisR
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-8">
           {items.map((item) => {
             const toneTags = item.stylePassport?.tone_tags || [];
+            const scripts = item.generatedScripts || [];
+            
             return (
-              <div 
-                key={item.id}
-                onClick={() => onSelect(item)}
-                className="group glass p-8 rounded-[32px] hover:translate-y-[-2px] hover:border-brand-500/40 transition-all cursor-pointer flex flex-col justify-between h-[300px] relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 blur-[50px] opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                
-                <div className="space-y-6 relative z-10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-1.5">
-                      {item.sources.slice(0, 3).map((s, idx) => (
-                        <div key={idx} className="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center text-sm shadow-md">
-                          {s.type === 'url' ? '🔗' : '📹'}
-                        </div>
-                      ))}
-                      {item.sources.length > 3 && (
-                        <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center text-[10px] font-bold">
-                          +{item.sources.length - 3}
-                        </div>
-                      )}
+              <div key={item.id} className="space-y-4">
+                {/* Карточка анализа */}
+                <div 
+                  onClick={() => onSelect(item)}
+                  className="group glass p-8 rounded-[32px] hover:translate-y-[-2px] hover:border-brand-500/40 transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 blur-[50px] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-1.5">
+                        {item.sources.slice(0, 3).map((s, idx) => (
+                          <div key={idx} className="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center text-sm shadow-md">
+                            {s.type === 'url' ? '🔗' : '📹'}
+                          </div>
+                        ))}
+                        {item.sources.length > 3 && (
+                          <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center text-[10px] font-bold">
+                            +{item.sources.length - 3}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(item.timestamp).toLocaleDateString()}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(item.timestamp).toLocaleDateString()}</span>
+                    <div>
+                      <h3 className="font-black text-xl leading-tight group-hover:text-brand-600 transition-colors line-clamp-1 text-slate-900 dark:text-white mb-2">
+                        Групповой разбор ДНК
+                      </h3>
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider line-clamp-2">
+                        {item.sources.map(s => s.label).join(', ')}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-black text-xl leading-tight group-hover:text-brand-600 transition-colors line-clamp-1 text-slate-900 dark:text-white mb-2">
-                      Групповой разбор ДНК
-                    </h3>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider line-clamp-2">
-                      {item.sources.map(s => s.label).join(', ')}
-                    </p>
+                  
+                  <div className="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-white/5 relative z-10">
+                    <div className="flex gap-2">
+                      {toneTags.slice(0, 2).map((tag, i) => (
+                        <span key={i} className="text-[9px] font-bold text-brand-600 bg-brand-500/5 px-3 py-1 rounded-lg border border-brand-600/10 uppercase tracking-widest">#{tag}</span>
+                      ))}
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-brand-600 transition-colors flex items-center gap-1.5">
+                      Смотреть DNA <span>→</span>
+                    </div>
                   </div>
                 </div>
-                
-                <div className="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-white/5 relative z-10">
-                  <div className="flex gap-2">
-                    {toneTags.slice(0, 2).map((tag, i) => (
-                      <span key={i} className="text-[9px] font-bold text-brand-600 bg-brand-500/5 px-3 py-1 rounded-lg border border-brand-600/10 uppercase tracking-widest">#{tag}</span>
+
+                {/* Сгенерированные сценарии */}
+                {scripts.length > 0 && (
+                  <div className="ml-4 space-y-3">
+                    <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-2">
+                      Сценарии ({scripts.length})
+                    </h4>
+                    {scripts.map((script, idx) => (
+                      <div
+                        key={script.scriptId || idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (script.scriptId) {
+                            navigate(`/scripts/${item.id}`);
+                          }
+                        }}
+                        className="group glass p-6 rounded-[24px] hover:translate-y-[-2px] hover:border-brand-500/40 transition-all cursor-pointer flex items-center justify-between relative overflow-hidden"
+                      >
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className="w-12 h-12 rounded-xl bg-brand-600/10 dark:bg-brand-500/20 flex items-center justify-center text-xl">
+                            📝
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h5 className="font-bold text-base text-slate-900 dark:text-white line-clamp-1 group-hover:text-brand-600 transition-colors">
+                              {script.topic}
+                            </h5>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                              {script.content?.length || 0} сегментов
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-brand-600 uppercase tracking-widest group-hover:text-brand-500 transition-colors">
+                            Открыть →
+                          </span>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-brand-600 transition-colors flex items-center gap-1.5">
-                    Смотреть DNA <span>→</span>
-                  </div>
-                </div>
+                )}
               </div>
             );
           })}

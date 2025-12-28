@@ -6,6 +6,7 @@ import AnalysisPage from './components/AnalysisPage';
 import ResultsPage from './components/ResultsPage';
 import GeneratorPage from './components/GeneratorPage';
 import HistoryPage from './components/HistoryPage';
+import ScriptsPage from './components/ScriptsPage';
 import { getHistory, getAnalysis } from './api';
 
 // Компонент для навигации
@@ -207,6 +208,7 @@ const AppContent: React.FC = () => {
           <Route path="/analyze" element={<AnalysisWrapper onComplete={saveToHistory} />} />
           <Route path="/results/:id" element={<ResultsWrapper onGenerate={() => {}} />} />
           <Route path="/generate/:id" element={<GeneratorWrapper onUpdate={saveToHistory} />} />
+          <Route path="/scripts/:id" element={<ScriptsPage />} />
           <Route 
             path="/history" 
             element={

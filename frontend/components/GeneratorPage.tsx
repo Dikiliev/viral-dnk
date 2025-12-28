@@ -1,22 +1,15 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnalysisResult, ScriptSegment } from '../types';
 import { generateScript } from '../gemini';
 import { generateMediaForSegment } from '../api';
 
 const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: AnalysisResult) => void }> = ({ analysis, onUpdate }) => {
+  const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const firstScript = analysis.generatedScripts?.[0];
-  const [script, setScript] = useState<ScriptSegment[] | null>(firstScript?.content || null);
-  const [currentScriptId, setCurrentScriptId] = useState<string | null>(firstScript?.scriptId || null);
-  
-  // Если есть существующий сценарий, устанавливаем тему
-  useEffect(() => {
-    if (firstScript && !topic) {
-      setTopic(firstScript.topic);
-    }
-  }, [firstScript, topic]);
+  // Показываем только новый сценарий, который создается сейчас
+  const [currentScript, setCurrentScript] = useState<{ scriptId: string; segments: ScriptSegment[] } | null>(null);
 
   const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
   const audioRefs = useRef<{[key: number]: HTMLAudioElement | null}>({});
@@ -27,13 +20,19 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
     setIsGenerating(true);
     try {
       const { scriptId, segments } = await generateScript(topic, analysis.id);
-      setScript(segments);
-      setCurrentScriptId(scriptId);
+      
+      // Устанавливаем только новый сценарий
+      setCurrentScript({ scriptId, segments });
+      
+      // Обновляем analysis на бекенде, но не показываем старые сценарии
       const updated: AnalysisResult = {
         ...analysis,
         generatedScripts: [{ scriptId, topic, content: segments }, ...(analysis.generatedScripts || [])]
       };
       onUpdate(updated);
+      
+      // Очищаем поле ввода после успешной генерации
+      setTopic('');
     } catch (e) {
       console.error(e);
       alert('Ошибка генерации сценария: ' + (e as Error).message);
@@ -43,47 +42,49 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
   };
 
   const updateMediaState = (index: number, status: ScriptSegment['media']['status'], data: Partial<ScriptSegment['media']> = {}) => {
-    setScript(prev => {
+    if (!currentScript) return;
+    
+    setCurrentScript(prev => {
       if (!prev) return null;
-      const newScript = [...prev];
-      const currentMedia = newScript[index].media || { status: 'idle' } as any;
-      newScript[index] = { ...newScript[index], media: { ...currentMedia, status, ...data } };
-      return newScript;
+      const newSegments = [...prev.segments];
+      const currentMedia = newSegments[index].media || { status: 'idle' } as any;
+      newSegments[index] = { ...newSegments[index], media: { ...currentMedia, status, ...data } };
+      return { ...prev, segments: newSegments };
     });
   };
 
   const handleRenderScene = async (index: number, segment: ScriptSegment) => {
-    if (!currentScriptId || !segment.id) {
+    if (!currentScript || !segment.id) {
       alert('Ошибка: отсутствует ID сценария или сегмента');
       return;
     }
 
     updateMediaState(index, 'generating_image');
     try {
-      const updatedSegment = await generateMediaForSegment(currentScriptId, segment.id);
+      const updatedSegment = await generateMediaForSegment(currentScript.scriptId, segment.id);
       
-      // Обновляем сегмент с полученными данными
-      setScript(prev => {
+      // Обновляем текущий сценарий
+      setCurrentScript(prev => {
         if (!prev) return null;
-        const newScript = [...prev];
-        newScript[index] = {
-          ...newScript[index],
+        const newSegments = [...prev.segments];
+        newSegments[index] = {
+          ...newSegments[index],
           media: updatedSegment.media
         };
-        return newScript;
+        return { ...prev, segments: newSegments };
       });
 
       // Обновляем analysis с новыми данными
       const updated: AnalysisResult = {
         ...analysis,
         generatedScripts: analysis.generatedScripts.map(s => {
-          if (s.scriptId === currentScriptId) {
+          if (s.scriptId === currentScript.scriptId) {
             return {
               ...s,
-              content: script?.map((seg, i) => i === index ? {
+              content: currentScript.segments.map((seg, i) => i === index ? {
                 ...seg,
                 media: updatedSegment.media
-              } : seg) || []
+              } : seg)
             };
           }
           return s;
@@ -104,6 +105,9 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
     if (a) { a.currentTime = 0; a.play(); }
   };
 
+  const allScripts = analysis.generatedScripts || [];
+  const hasScripts = allScripts.length > 0;
+
   return (
     <div className="max-w-5xl mx-auto space-y-16 py-8">
       {/* Header section */}
@@ -122,8 +126,9 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
             className="flex-1 px-6 py-3 text-lg font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent border-none outline-none focus:outline-none focus:ring-0"
           />
           <button 
-            disabled={isGenerating}
-            className="bg-brand-600 text-white px-8 py-3 rounded-[16px] font-bold hover:bg-brand-700 transition-all active:scale-95 disabled:opacity-50"
+            type="submit"
+            disabled={isGenerating || !topic.trim()}
+            className="bg-brand-600 text-white px-8 py-3 rounded-[16px] font-bold hover:bg-brand-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating ? 'Пишем...' : 'Создать'}
           </button>
@@ -144,19 +149,45 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
             </div>
           </div>
         )}
+
+        {/* Кнопка для просмотра всех сценариев */}
+        {hasScripts && !currentScript && (
+          <div className="max-w-2xl mx-auto">
+            <button
+              onClick={() => navigate(`/scripts/${analysis.id}`)}
+              className="w-full glass p-6 rounded-[24px] hover:border-brand-500/40 transition-all flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-brand-600/10 dark:bg-brand-500/20 flex items-center justify-center text-xl">
+                  📚
+                </div>
+                <div className="text-left">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
+                    Все сценарии ({allScripts.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Просмотреть и редактировать созданные сценарии
+                  </p>
+                </div>
+              </div>
+              <span className="text-brand-600 group-hover:translate-x-1 transition-transform">→</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {script && (
+      {/* Показываем только текущий создаваемый сценарий */}
+      {currentScript && (
         <div className="relative space-y-12">
           {/* Timeline Backbone */}
           <div className="absolute left-[39px] top-4 bottom-4 w-px bg-slate-200 dark:bg-white/10 hidden sm:block"></div>
 
-          {script.map((segment, i) => {
+          {currentScript.segments.map((segment, i) => {
             const status = segment.media?.status || 'idle';
             const isLoading = status.startsWith('generating');
 
             return (
-              <div key={i} className="flex gap-8 items-start group">
+              <div key={segment.id || i} className="flex gap-8 items-start group">
                 {/* Timeline Column */}
                 <div className="w-20 shrink-0 flex flex-col items-center pt-2">
                   <div className="relative z-10 w-4 h-4 rounded-full bg-white dark:bg-brand-dark border-2 border-brand-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
@@ -241,6 +272,17 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Пустое состояние - нет сценариев */}
+      {!currentScript && !hasScripts && (
+        <div className="text-center py-20">
+          <div className="text-6xl mb-6 opacity-20">📝</div>
+          <h3 className="text-2xl font-bold text-slate-400 mb-2">Создайте первый сценарий</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            Введите тему для нового ролика и нажмите "Создать" для генерации сценария на основе ДНК успеха
+          </p>
         </div>
       )}
     </div>

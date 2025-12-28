@@ -10,27 +10,6 @@ class AnalysisSourceSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
-class AnalysisSerializer(serializers.ModelSerializer):
-    """Сериализатор для анализа"""
-    sources = AnalysisSourceSerializer(many=True, read_only=True)
-    
-    class Meta:
-        model = Analysis
-        fields = [
-            'id', 'status', 'transcript', 'style_passport', 'patterns', 
-            'grounding_sources', 'sources', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-
-class AnalysisCreateSerializer(serializers.Serializer):
-    """Сериализатор для создания анализа"""
-    sources = serializers.ListField(
-        child=serializers.DictField(),
-        help_text="Список источников: [{'type': 'url', 'value': '...', 'label': '...'}, ...]"
-    )
-
-
 class MediaFileSerializer(serializers.ModelSerializer):
     """Сериализатор для медиа файлов"""
     image_url = serializers.SerializerMethodField()
@@ -137,6 +116,28 @@ class ScriptSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
+class AnalysisSerializer(serializers.ModelSerializer):
+    """Сериализатор для анализа"""
+    sources = AnalysisSourceSerializer(many=True, read_only=True)
+    scripts = ScriptSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Analysis
+        fields = [
+            'id', 'status', 'transcript', 'style_passport', 'patterns', 
+            'grounding_sources', 'sources', 'scripts', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class AnalysisCreateSerializer(serializers.Serializer):
+    """Сериализатор для создания анализа"""
+    sources = serializers.ListField(
+        child=serializers.DictField(),
+        help_text="Список источников: [{'type': 'url', 'value': '...', 'label': '...'}, ...]"
+    )
+
+
 class ScriptCreateSerializer(serializers.Serializer):
     """Сериализатор для создания сценария"""
     analysis_id = serializers.UUIDField()
@@ -150,4 +151,3 @@ class ScriptSegmentCreateSerializer(serializers.Serializer):
         child=serializers.DictField(),
         help_text="Список сегментов: [{'timeframe': '...', 'visual': '...', 'audio': '...'}, ...]"
     )
-

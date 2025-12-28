@@ -1,9 +1,12 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnalysisResult } from '../types';
 
 const ResultsPage: React.FC<{ analysis: AnalysisResult; onGenerate: () => void }> = ({ analysis, onGenerate }) => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'passport' | 'transcript' | 'patterns'>('passport');
+  const scripts = analysis.generatedScripts || [];
 
   const passport = analysis.stylePassport;
   const structure = passport.structure || [];
@@ -37,12 +40,22 @@ const ResultsPage: React.FC<{ analysis: AnalysisResult; onGenerate: () => void }
             ))}
           </div>
         </div>
-        <button 
-          onClick={onGenerate}
-          className="bg-brand-600 text-white px-10 py-5 rounded-[22px] font-bold text-lg shadow-xl shadow-brand-600/30 hover:scale-105 active:scale-95 transition-all"
-        >
-          Создать по этому ДНК
-        </button>
+        <div className="flex gap-4">
+          {scripts.length > 0 && (
+            <button 
+              onClick={() => navigate(`/scripts/${analysis.id}`)}
+              className="glass text-slate-900 dark:text-white px-8 py-5 rounded-[22px] font-bold text-base hover:border-brand-500/40 transition-all"
+            >
+              Все сценарии ({scripts.length})
+            </button>
+          )}
+          <button 
+            onClick={onGenerate}
+            className="bg-brand-600 text-white px-10 py-5 rounded-[22px] font-bold text-lg shadow-xl shadow-brand-600/30 hover:scale-105 active:scale-95 transition-all"
+          >
+            Создать по этому ДНК
+          </button>
+        </div>
       </header>
 
       <div className="flex gap-10 border-b border-slate-200 dark:border-white/5 overflow-x-auto no-scrollbar">
