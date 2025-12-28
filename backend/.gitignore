@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+.venv/
+venv/
+env/
+# virtualenv
+# Windows:
+# venv\
+# Linux/macOS:
+# venv/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+/static
+/media
+
+# IDE-specific files (e.g., PyCharm, VS Code)
+.idea/
+.vscode/
+
+# Environment variables

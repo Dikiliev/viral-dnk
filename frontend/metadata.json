@@ -1,0 +1,7 @@
+{
+  "name": "ViralDNA AI - Premium Content Intelligence",
+  "description": "Enterprise-grade AI platform to deconstruct viral video DNA and generate high-retention content scripts.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
