@@ -94,8 +94,22 @@
       transform: rotate(-90deg);
     }
 
-    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
+    /* Кастомный скроллбар - переопределяет глобальное скрытие */
+    .custom-scrollbar {
+      scrollbar-width: thin; /* Firefox */
+      scrollbar-color: var(--accent) transparent; /* Firefox */
+    }
+    .custom-scrollbar::-webkit-scrollbar { 
+      display: block; /* Переопределяем глобальное скрытие */
+      width: 4px; 
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb { 
+      background: var(--accent); 
+      border-radius: 10px; 
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
 
     @keyframes typing {
       0%, 100% { opacity: 1; }
@@ -156,7 +170,19 @@
       background-color: rgba(139, 92, 246, 0.3);
     }
 
-    /* No scrollbar */
+    /* No scrollbar - глобально скрываем скроллбар */
+    * {
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE и Edge */
+    }
+    
+    *::-webkit-scrollbar {
+      display: none; /* Chrome, Safari, Opera */
+      width: 0;
+      height: 0;
+    }
+    
+    /* Класс для явного скрытия скроллбара (если нужно) */
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }

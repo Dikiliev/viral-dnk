@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AnalysisResult, ScriptSegment } from '../types';
-import { getAnalysis, generateVideoPreview } from '../api';
+import { getAnalysis, generateVideoPreview, downloadScriptPDF } from '../api';
 import LoadingSpinner from './LoadingSpinner';
 import VideoPreviewModal from './VideoPreviewModal';
 
@@ -78,174 +78,43 @@ const ScriptsPage: React.FC = () => {
     if (a) { a.currentTime = 0; a.play(); }
   };
 
-  /**
-   * Парсит timeframe и возвращает время в секундах
-   * Формат может быть: "0:00-0:15", "0:15-0:30", "15s-30s" и т.д.
-   */
-  const parseTimeframeToSeconds = (timeframe: string): number => {
-    // Пытаемся извлечь время из формата "MM:SS" или "SSs"
-    const match = timeframe.match(/(\d+):(\d+)/);
-    if (match) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      return minutes * 60 + seconds;
-    }
-    
-    // Пытаемся извлечь секунды из формата "SSs"
-    const secondsMatch = timeframe.match(/(\d+)s/);
-    if (secondsMatch) {
-      return parseInt(secondsMatch[1], 10);
-    }
-    
-    // Если не удалось распарсить, возвращаем 0
-    return 0;
-  };
-
-  /**
-   * Вычисляет накопленное время сегментов до указанного индекса
-   */
-  const getAccumulatedTime = (segments: ScriptSegment[], endIndex: number): number => {
-    let totalSeconds = 0;
-    for (let i = 0; i <= endIndex && i < segments.length; i++) {
-      const timeframe = segments[i].timeframe;
-      // Берем конечное время из timeframe (например, "0:00-0:15" -> 15 секунд)
-      const timeMatch = timeframe.match(/-(\d+):(\d+)/) || timeframe.match(/-(\d+)s/);
-      if (timeMatch) {
-        if (timeMatch[2]) {
-          // Формат MM:SS
-          const minutes = parseInt(timeMatch[1], 10);
-          const seconds = parseInt(timeMatch[2], 10);
-          totalSeconds = minutes * 60 + seconds;
-        } else {
-          // Формат SSs
-          totalSeconds = parseInt(timeMatch[1], 10);
-        }
-      } else {
-        // Если не удалось распарсить, добавляем 15 секунд по умолчанию
-        totalSeconds += 15;
-      }
-    }
-    return totalSeconds;
-  };
-
-  /**
-   * Проверяет, нужно ли показывать кнопку предпросмотра после указанного индекса
-   */
-  const shouldShowPreviewButton = (segments: ScriptSegment[], index: number): boolean => {
-    const accumulatedTime = getAccumulatedTime(segments, index);
-    return accumulatedTime >= 15;
-  };
-
-  /**
-   * Получает сегменты для предпросмотра (от начала до указанного индекса включительно)
-   */
-  const getSegmentsForPreview = (segments: ScriptSegment[], endIndex: number): ScriptSegment[] => {
-    return segments.slice(0, endIndex + 1);
-  };
-
-  // Старый метод удален - теперь используется модальное окно для генерации видео
-
+  // Обработчик клика на кнопку предпросмотра - открывает модальное окно для одного сегмента
   const handlePreviewClick = (scriptIndex: number, segmentIndex: number) => {
     const script = scripts[scriptIndex];
     if (!script?.scriptId) return;
     
     const segments = script.content || [];
-    const previewSegs = getSegmentsForPreview(segments, segmentIndex);
-    setPreviewSegments(previewSegs);
+    const currentSegment = segments[segmentIndex];
+    if (!currentSegment) return;
+    
+    // Передаем только текущий сегмент
+    setPreviewSegments([currentSegment]);
     setPreviewModalOpen(true);
   };
 
-  // Получаем информацию о сгенерированном видео для сегментов
+  // Получаем информацию о сгенерированном видео для текущего сегмента
   const getPreviewVideoInfo = () => {
     if (!selectedScript || previewSegments.length === 0) return null;
     
-    // Проверяем, что все сегменты в группе имеют одинаковый kieTaskId
-    // Это гарантирует, что видео было сгенерировано именно для этой группы
-    const segmentMediaInfo: Array<{ taskId?: string; videoUrl?: string; status: string }> = [];
+    // Берем только первый (и единственный) сегмент
+    const currentSegment = previewSegments[0];
+    const segmentInScript = selectedScript.content?.find(s => s.id === currentSegment.id);
     
-    for (const previewSeg of previewSegments) {
-      const segmentInScript = selectedScript.content?.find(s => s.id === previewSeg.id);
-      if (segmentInScript?.media) {
-        segmentMediaInfo.push({
-          taskId: segmentInScript.media.kieTaskId,
-          videoUrl: segmentInScript.media.videoUrl,
-          status: segmentInScript.media.status || 'idle'
-        });
-      }
-    }
+    if (!segmentInScript?.media) return null;
     
-    if (segmentMediaInfo.length === 0) return null;
+    const media = segmentInScript.media;
     
-    // Проверяем, что все сегменты имеют одинаковый taskId (видео было сгенерировано для этой группы)
-    const firstTaskId = segmentMediaInfo[0]?.taskId;
-    if (!firstTaskId) return null;
-    
-    const allHaveSameTaskId = segmentMediaInfo.every(info => info.taskId === firstTaskId);
-    if (!allHaveSameTaskId) return null; // Разные taskId - видео не для этой группы
-    
-    // Берем информацию из последнего сегмента (он гарантированно имеет актуальное видео)
-    const lastMediaInfo = segmentMediaInfo[segmentMediaInfo.length - 1];
-    
-    if (lastMediaInfo.status === 'done' && lastMediaInfo.videoUrl) {
+    if (media.status === 'done' && media.videoUrl) {
       return {
-        videoUrl: lastMediaInfo.videoUrl,
-        taskId: firstTaskId
+        videoUrl: media.videoUrl,
+        taskId: media.kieTaskId || undefined
       };
     }
     
-    if (lastMediaInfo.status === 'generating_video' && firstTaskId) {
+    if (media.status === 'generating_video' && media.kieTaskId) {
       return {
         videoUrl: undefined,
-        taskId: firstTaskId
-      };
-    }
-    
-    return null;
-  };
-
-  // Получаем информацию о видео для группы сегментов (от начала до endIndex)
-  const getPreviewVideoInfoForSegments = (segments: ScriptSegment[], endIndex: number) => {
-    if (!selectedScript) return null;
-    
-    const previewSegs = segments.slice(0, endIndex + 1);
-    if (previewSegs.length === 0) return null;
-    
-    // Проверяем, что все сегменты в группе имеют одинаковый kieTaskId
-    // Это гарантирует, что видео было сгенерировано именно для этой группы
-    const segmentMediaInfo: Array<{ taskId?: string; videoUrl?: string; status: string }> = [];
-    
-    for (const previewSeg of previewSegs) {
-      const segmentInScript = selectedScript.content?.find(s => s.id === previewSeg.id);
-      if (segmentInScript?.media) {
-        segmentMediaInfo.push({
-          taskId: segmentInScript.media.kieTaskId,
-          videoUrl: segmentInScript.media.videoUrl,
-          status: segmentInScript.media.status || 'idle'
-        });
-      }
-    }
-    
-    if (segmentMediaInfo.length === 0) return null;
-    
-    // Проверяем, что все сегменты имеют одинаковый taskId (видео было сгенерировано для этой группы)
-    const firstTaskId = segmentMediaInfo[0]?.taskId;
-    if (!firstTaskId) return null;
-    
-    const allHaveSameTaskId = segmentMediaInfo.every(info => info.taskId === firstTaskId);
-    if (!allHaveSameTaskId) return null; // Разные taskId - видео не для этой группы
-    
-    // Берем информацию из последнего сегмента (он гарантированно имеет актуальное видео)
-    const lastMediaInfo = segmentMediaInfo[segmentMediaInfo.length - 1];
-    
-    if (lastMediaInfo.status === 'done' && lastMediaInfo.videoUrl) {
-      return {
-        videoUrl: lastMediaInfo.videoUrl,
-        taskId: firstTaskId
-      };
-    } else if (lastMediaInfo.status === 'generating_video' && firstTaskId) {
-      return {
-        videoUrl: undefined,
-        taskId: firstTaskId
+        taskId: media.kieTaskId
       };
     }
     
@@ -258,8 +127,11 @@ const ScriptsPage: React.FC = () => {
     if (!script?.scriptId) return;
     
     const segments = script.content || [];
-    const previewSegs = getSegmentsForPreview(segments, segmentIndex);
-    setPreviewSegments(previewSegs);
+    const currentSegment = segments[segmentIndex];
+    if (!currentSegment) return;
+    
+    // Передаем только текущий сегмент
+    setPreviewSegments([currentSegment]);
     setPreviewModalOpen(true);
   };
 
@@ -391,7 +263,31 @@ const ScriptsPage: React.FC = () => {
                           {selectedScript.content?.length || 0} {selectedScript.content?.length === 1 ? 'сегмент' : 'сегментов'}
                         </p>
                       </div>
-                      <div className="shrink-0">
+                      <div className="shrink-0 flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!selectedScript?.scriptId) return;
+                            try {
+                              const blob = await downloadScriptPDF(selectedScript.scriptId);
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `scenario_${selectedScript.topic.substring(0, 30)}.pdf`;
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              document.body.removeChild(a);
+                            } catch (error) {
+                              console.error('Ошибка скачивания PDF:', error);
+                              alert('Ошибка при скачивании PDF файла');
+                            }
+                          }}
+                          className="px-4 sm:px-5 py-2 sm:py-2.5 bg-brand-600 text-white rounded-[12px] sm:rounded-[14px] text-xs sm:text-sm font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95 flex items-center gap-2"
+                        >
+                          <span>📄</span>
+                          <span className="hidden sm:inline">Скачать PDF</span>
+                          <span className="sm:hidden">PDF</span>
+                        </button>
                         <div className="w-12 h-12 rounded-xl bg-brand-600/10 dark:bg-brand-500/20 flex items-center justify-center text-xl">
                           📝
                         </div>
@@ -407,124 +303,89 @@ const ScriptsPage: React.FC = () => {
                       const status = segment.media?.status || 'idle';
                       const isLoading = status.startsWith('generating');
                       const key = `${selectedScriptIndex}-${i}`;
-                      const segments = selectedScript.content || [];
-                      const showPreviewButton = shouldShowPreviewButton(segments, i);
-                      const isLastSegment = i === segments.length - 1;
 
                       return (
-                        <React.Fragment key={segment.id || i}>
-                          <div className="flex gap-4 sm:gap-8 items-start group">
-                            <div className="w-16 sm:w-20 shrink-0 flex flex-col items-center pt-2">
-                              <div className="relative z-10 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white dark:bg-brand-dark border-2 border-brand-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
-                              <div className="mono text-[9px] sm:text-[10px] font-bold text-slate-400 mt-2 sm:mt-3">{segment.timeframe}</div>
-                            </div>
+                        <div key={segment.id || i} className="flex gap-4 sm:gap-8 items-start group">
+                          <div className="w-16 sm:w-20 shrink-0 flex flex-col items-center pt-2">
+                            <div className="relative z-10 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white dark:bg-brand-dark border-2 border-brand-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
+                            <div className="mono text-[9px] sm:text-[10px] font-bold text-slate-400 mt-2 sm:mt-3">{segment.timeframe}</div>
+                          </div>
 
-                            <div className="flex-1 space-y-4 sm:space-y-6">
-                              <div className="glass p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] border border-slate-200 dark:border-white/10 hover:border-brand-500/30 transition-all duration-500 group-hover:translate-x-1">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10">
-                                  <div className="lg:col-span-4 space-y-4">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500">Визуальный план</span>
-                                    <p className="text-sm font-medium text-slate-500 leading-relaxed italic">
-                                      {segment.visual}
-                                    </p>
-                                  </div>
-                                  <div className="lg:col-span-8 space-y-4">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500">Текст автора</span>
-                                    <p className="text-xl sm:text-2xl font-[800] text-slate-900 dark:text-white leading-snug">
-                                      {segment.audio}
-                                    </p>
-                                  </div>
+                          <div className="flex-1 space-y-4 sm:space-y-6">
+                            <div className="glass p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] border border-slate-200 dark:border-white/10 hover:border-brand-500/30 transition-all duration-500 group-hover:translate-x-1">
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10">
+                                <div className="lg:col-span-4 space-y-4">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500">Визуальный план</span>
+                                  <p className="text-sm font-medium text-slate-500 leading-relaxed italic">
+                                    {segment.visual}
+                                  </p>
                                 </div>
+                                <div className="lg:col-span-8 space-y-4">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500">Текст автора</span>
+                                  <p className="text-xl sm:text-2xl font-[800] text-slate-900 dark:text-white leading-snug">
+                                    {segment.audio}
+                                  </p>
+                                </div>
+                              </div>
 
-                                <div className="mt-6 sm:mt-8 pt-6 border-t border-slate-100 dark:border-white/5">
-                                  {/* Кнопка предпросмотра для генерации видео */}
-                                  {(status === 'idle' || status === 'generating_image' || status === 'generating_audio' || status === 'error') && (
-                                    <button 
-                                      onClick={() => handlePreviewClick(selectedScriptIndex!, i)}
-                                      className="inline-flex items-center gap-2 px-5 sm:px-6 py-2 sm:py-2.5 bg-brand-600 text-white rounded-[12px] sm:rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
-                                    >
-                                      🎬 Предпросмотр
-                                    </button>
-                                  )}
+                              <div className="mt-6 sm:mt-8 pt-6 border-t border-slate-100 dark:border-white/5">
+                                {/* Кнопка предпросмотра для генерации видео */}
+                                {(status === 'idle' || status === 'generating_image' || status === 'generating_audio' || status === 'error') && (
+                                  <button 
+                                    onClick={() => handlePreviewClick(selectedScriptIndex!, i)}
+                                    className="inline-flex items-center gap-2 px-5 sm:px-6 py-2 sm:py-2.5 bg-brand-600 text-white rounded-[12px] sm:rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
+                                  >
+                                    🎬 Предпросмотр
+                                  </button>
+                                )}
 
-                                  {/* Статус генерации медиа (старый флоу) */}
-                                  {(status === 'generating_image' || status === 'generating_video' || status === 'generating_audio') && (
-                                    <div className="flex items-center gap-4 py-2">
-                                      <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-                                      <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500 animate-pulse">
-                                        {status === 'generating_image' && "Рисуем..."}
-                                        {status === 'generating_video' && "Анимируем..."}
-                                        {status === 'generating_audio' && "Озвучиваем..."}
-                                      </span>
+                                {/* Статус генерации видео */}
+                                {status === 'generating_video' && (
+                                  <div className="flex items-center gap-4 py-2">
+                                    <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500 animate-pulse">
+                                      Анимируем...
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Отображение сгенерированного видео */}
+                                {status === 'done' && segment.media && segment.media.videoUrl && (
+                                  <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center bg-slate-50 dark:bg-white/5 p-5 sm:p-6 rounded-[20px] sm:rounded-[24px] border border-slate-200 dark:border-white/10">
+                                    <div className="w-full md:w-32 aspect-[9/16] bg-black rounded-[16px] sm:rounded-[18px] overflow-hidden relative group/player shadow-xl shrink-0">
+                                      <video 
+                                        ref={el => { videoRefs.current[key] = el }}
+                                        src={segment.media.videoUrl} 
+                                        className="w-full h-full object-cover"
+                                        loop muted playsInline
+                                      />
+                                      <audio ref={el => { audioRefs.current[key] = el }} src={segment.media.audioUrl} />
+                                      <button 
+                                        onClick={() => playScene(selectedScriptIndex!, i)}
+                                        className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/player:opacity-100 transition-all"
+                                      >
+                                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center pl-0.5 shadow-xl">
+                                          <span className="text-black text-xs">▶</span>
+                                        </div>
+                                      </button>
                                     </div>
-                                  )}
-
-                                  {/* Отображение сгенерированного видео */}
-                                  {status === 'done' && segment.media && segment.media.videoUrl && (
-                                    <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center bg-slate-50 dark:bg-white/5 p-5 sm:p-6 rounded-[20px] sm:rounded-[24px] border border-slate-200 dark:border-white/10">
-                                      <div className="w-full md:w-32 aspect-[9/16] bg-black rounded-[16px] sm:rounded-[18px] overflow-hidden relative group/player shadow-xl shrink-0">
-                                        <video 
-                                          ref={el => { videoRefs.current[key] = el }}
-                                          src={segment.media.videoUrl} 
-                                          className="w-full h-full object-cover"
-                                          loop muted playsInline
-                                        />
-                                        <audio ref={el => { audioRefs.current[key] = el }} src={segment.media.audioUrl} />
-                                        <button 
-                                          onClick={() => playScene(selectedScriptIndex!, i)}
-                                          className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/player:opacity-100 transition-all"
-                                        >
-                                          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center pl-0.5 shadow-xl">
-                                            <span className="text-black text-xs">▶</span>
-                                          </div>
-                                        </button>
+                                    
+                                    <div className="flex-1 space-y-4 w-full">
+                                      <div>
+                                        <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Сцена готова</h4>
+                                        <p className="text-xs text-slate-500 font-medium">Контент сгенерирован ИИ-моделями VEO 3.1 и Gemini TTS.</p>
                                       </div>
-                                      
-                                      <div className="flex-1 space-y-4 w-full">
-                                        <div>
-                                          <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Сцена готова</h4>
-                                          <p className="text-xs text-slate-500 font-medium">Контент сгенерирован ИИ-моделями VEO 3.1 и Gemini TTS.</p>
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <button onClick={() => handleViewVideo(selectedScriptIndex!, i)} className="px-5 sm:px-6 py-2 bg-brand-600 text-white rounded-[10px] sm:rounded-[12px] text-xs font-bold hover:bg-brand-700 transition-all">Смотреть</button>
-                                          <a href={segment.media.videoUrl} download className="px-5 sm:px-6 py-2 glass rounded-[10px] sm:rounded-[12px] text-xs font-bold text-slate-500 hover:border-brand-500/30 transition-all border border-slate-200 dark:border-white/10">MP4</a>
-                                        </div>
+                                      <div className="flex gap-2">
+                                        <button onClick={() => handleViewVideo(selectedScriptIndex!, i)} className="px-5 sm:px-6 py-2 bg-brand-600 text-white rounded-[10px] sm:rounded-[12px] text-xs font-bold hover:bg-brand-700 transition-all">Смотреть</button>
+                                        <a href={segment.media.videoUrl} download className="px-5 sm:px-6 py-2 glass rounded-[10px] sm:rounded-[12px] text-xs font-bold text-slate-500 hover:border-brand-500/30 transition-all border border-slate-200 dark:border-white/10">MP4</a>
                                       </div>
                                     </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
-
-                          {/* Кнопка предпросмотра после карточки, если прошло 15 секунд */}
-                          {showPreviewButton && (isLastSegment || !shouldShowPreviewButton(segments, i + 1)) && (
-                            <div className="flex gap-4 sm:gap-8 items-start">
-                              <div className="w-16 sm:w-20 shrink-0"></div>
-                              <div className="flex-1">
-                                <div className="glass p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] border-2 border-dashed border-brand-500/30 bg-brand-500/5">
-                                  <div className="text-center space-y-4">
-                                    <div>
-                                      <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-                                        Готово к предпросмотру
-                                      </h4>
-                                      <p className="text-sm text-slate-500">
-                                        Сегменты набрали {getAccumulatedTime(segments, i)} секунд. Сгенерируйте видео предпросмотр.
-                                      </p>
-                                    </div>
-                                    <button
-                                      onClick={() => handlePreviewClick(selectedScriptIndex!, i)}
-                                      className="inline-flex items-center gap-2 px-8 py-4 bg-brand-600 text-white rounded-[16px] text-sm font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
-                                    >
-                                      <span>🎬</span>
-                                      <span>Сгенерировать предпросмотр видео</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </React.Fragment>
+                        </div>
                       );
                     })}
                   </div>
@@ -541,17 +402,17 @@ const ScriptsPage: React.FC = () => {
       )}
 
       {/* Модальное окно для генерации видео */}
-      {previewModalOpen && selectedScript && (
+      {previewModalOpen && selectedScript && previewSegments.length > 0 && (
         <VideoPreviewModal
           isOpen={previewModalOpen}
           onClose={() => setPreviewModalOpen(false)}
           scriptId={selectedScript.scriptId!}
-          segmentIds={previewSegments.map(s => s.id!).filter(Boolean)}
-          segments={previewSegments.map(s => ({
-            timeframe: s.timeframe,
-            visual: s.visual,
-            audio: s.audio
-          }))}
+          segmentIds={[previewSegments[0].id!].filter(Boolean)}
+          segments={[{
+            timeframe: previewSegments[0].timeframe,
+            visual: previewSegments[0].visual,
+            audio: previewSegments[0].audio
+          }]}
           existingVideoUrl={getPreviewVideoInfo()?.videoUrl}
           existingTaskId={getPreviewVideoInfo()?.taskId}
           onVideoGenerated={refreshAnalysis}

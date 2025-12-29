@@ -2,13 +2,16 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnalysisResult, ScriptSegment } from '../types';
 import { generateScript } from '../gemini';
-import { generateMediaForSegment } from '../api';
+import { generateVideoPreview, getAnalysis } from '../api';
+import VideoPreviewModal from './VideoPreviewModal';
 
 const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: AnalysisResult) => void }> = ({ analysis, onUpdate }) => {
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentScript, setCurrentScript] = useState<{ scriptId: string; segments: ScriptSegment[] } | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewSegment, setPreviewSegment] = useState<ScriptSegment | null>(null);
 
   const videoRefs = useRef<{[key: number]: HTMLVideoElement | null}>({});
   const audioRefs = useRef<{[key: number]: HTMLAudioElement | null}>({});
@@ -37,59 +40,65 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
     }
   };
 
-  const updateMediaState = (index: number, status: ScriptSegment['media']['status'], data: Partial<ScriptSegment['media']> = {}) => {
-    if (!currentScript) return;
-    
-    setCurrentScript(prev => {
-      if (!prev) return null;
-      const newSegments = [...prev.segments];
-      const currentMedia = newSegments[index].media || { status: 'idle' } as any;
-      newSegments[index] = { ...newSegments[index], media: { ...currentMedia, status, ...data } };
-      return { ...prev, segments: newSegments };
-    });
+  // Обработчик клика на кнопку предпросмотра - открывает модальное окно
+  const handlePreviewClick = (segment: ScriptSegment) => {
+    if (!currentScript?.scriptId || !segment.id) return;
+    setPreviewSegment(segment);
+    setPreviewModalOpen(true);
   };
 
-  const handleRenderScene = async (index: number, segment: ScriptSegment) => {
-    if (!currentScript || !segment.id) {
-      alert('Ошибка: отсутствует ID сценария или сегмента');
-      return;
-    }
-
-    updateMediaState(index, 'generating_image');
-    try {
-      const updatedSegment = await generateMediaForSegment(currentScript.scriptId, segment.id);
-      
-      setCurrentScript(prev => {
-        if (!prev) return null;
-        const newSegments = [...prev.segments];
-        newSegments[index] = {
-          ...newSegments[index],
-          media: updatedSegment.media
-        };
-        return { ...prev, segments: newSegments };
-      });
-
-      const updated: AnalysisResult = {
-        ...analysis,
-        generatedScripts: analysis.generatedScripts.map(s => {
-          if (s.scriptId === currentScript.scriptId) {
-            return {
-              ...s,
-              content: currentScript.segments.map((seg, i) => i === index ? {
-                ...seg,
-                media: updatedSegment.media
-              } : seg)
-            };
-          }
-          return s;
-        })
+  // Получаем информацию о сгенерированном видео для текущего сегмента
+  const getPreviewVideoInfo = () => {
+    if (!previewSegment?.media) return null;
+    
+    const media = previewSegment.media;
+    
+    if (media.status === 'done' && media.videoUrl) {
+      return {
+        videoUrl: media.videoUrl,
+        taskId: media.kieTaskId || undefined
       };
-      onUpdate(updated);
-    } catch (error) {
-      console.error(error);
-      updateMediaState(index, 'error');
-      alert('Ошибка генерации медиа: ' + (error as Error).message);
     }
+    
+    if (media.status === 'generating_video' && media.kieTaskId) {
+      return {
+        videoUrl: undefined,
+        taskId: media.kieTaskId
+      };
+    }
+    
+    return null;
+  };
+
+  // Обновление данных после генерации видео
+  const refreshScript = async () => {
+    if (!currentScript || !analysis.id) return;
+    
+    try {
+      // Загружаем свежие данные с сервера
+      const updatedAnalysis = await getAnalysis(analysis.id);
+      
+      // Обновляем analysis через onUpdate
+      onUpdate(updatedAnalysis);
+      
+      // Обновляем currentScript из обновленного analysis
+      const scriptInAnalysis = updatedAnalysis.generatedScripts?.find(s => s.scriptId === currentScript.scriptId);
+      if (scriptInAnalysis) {
+        setCurrentScript({
+          scriptId: currentScript.scriptId,
+          segments: scriptInAnalysis.content || []
+        });
+      }
+    } catch (error) {
+      console.error('Ошибка обновления сценария:', error);
+    }
+  };
+
+  // Открытие модального окна для просмотра существующего видео
+  const handleViewVideo = (segment: ScriptSegment) => {
+    if (!currentScript?.scriptId || !segment.id) return;
+    setPreviewSegment(segment);
+    setPreviewModalOpen(true);
   };
 
   const playScene = (index: number) => {
@@ -226,36 +235,37 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
 
                     {/* Action Area */}
                     <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5">
-                      {status === 'idle' && (
+                      {/* Кнопка предпросмотра для генерации видео */}
+                      {(status === 'idle' || status === 'generating_image' || status === 'generating_audio' || status === 'error') && (
                         <button 
-                          onClick={() => handleRenderScene(i, segment)}
-                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-brand-600 text-white rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
+                          onClick={() => handlePreviewClick(segment)}
+                          className="inline-flex items-center gap-2 px-5 sm:px-6 py-2 sm:py-2.5 bg-brand-600 text-white rounded-[12px] sm:rounded-[14px] text-xs font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 hover:scale-105 active:scale-95"
                         >
                           🎬 Предпросмотр
                         </button>
                       )}
 
-                      {isLoading && (
+                      {/* Статус генерации видео */}
+                      {status === 'generating_video' && (
                         <div className="flex items-center gap-4 py-2">
                           <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
                           <span className="text-[10px] font-bold uppercase tracking-widest text-brand-500 animate-pulse">
-                            {status === 'generating_image' && "Рисуем..."}
-                            {status === 'generating_video' && "Анимируем..."}
-                            {status === 'generating_audio' && "Озвучиваем..."}
+                            Анимируем...
                           </span>
                         </div>
                       )}
 
-                      {status === 'done' && segment.media && (
-                        <div className="flex flex-col md:flex-row gap-8 items-center bg-slate-50 dark:bg-white/5 p-6 rounded-[24px]">
-                          <div className="w-full md:w-32 aspect-[9/16] bg-black rounded-[18px] overflow-hidden relative group/player shadow-xl shrink-0">
+                      {/* Отображение сгенерированного видео */}
+                      {status === 'done' && segment.media && segment.media.videoUrl && (
+                        <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center bg-slate-50 dark:bg-white/5 p-5 sm:p-6 rounded-[20px] sm:rounded-[24px] border border-slate-200 dark:border-white/10">
+                          <div className="w-full md:w-32 aspect-[9/16] bg-black rounded-[16px] sm:rounded-[18px] overflow-hidden relative group/player shadow-xl shrink-0">
                             <video 
                               ref={el => { videoRefs.current[i] = el }}
-                              src={segment.media!.videoUrl} 
+                              src={segment.media.videoUrl} 
                               className="w-full h-full object-cover"
                               loop muted playsInline
                             />
-                            <audio ref={el => { audioRefs.current[i] = el }} src={segment.media!.audioUrl} />
+                            <audio ref={el => { audioRefs.current[i] = el }} src={segment.media.audioUrl} />
                             <button 
                               onClick={() => playScene(i)}
                               className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/player:opacity-100 transition-all"
@@ -266,14 +276,14 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
                             </button>
                           </div>
                           
-                          <div className="flex-1 space-y-4">
+                          <div className="flex-1 space-y-4 w-full">
                             <div>
-                              <h4 className="text-lg font-bold text-slate-900 dark:text-white">Сцена готова</h4>
+                              <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Сцена готова</h4>
                               <p className="text-xs text-slate-500 font-medium">Контент сгенерирован ИИ-моделями VEO 3.1 и Gemini TTS.</p>
                             </div>
                             <div className="flex gap-2">
-                              <button onClick={() => playScene(i)} className="px-6 py-2 bg-brand-600 text-white rounded-[12px] text-xs font-bold hover:bg-brand-700 transition-all">Смотреть</button>
-                              <a href={segment.media!.videoUrl} download className="px-6 py-2 glass rounded-[12px] text-xs font-bold text-slate-500 hover:border-brand-500/30 transition-all">MP4</a>
+                              <button onClick={() => handleViewVideo(segment)} className="px-5 sm:px-6 py-2 bg-brand-600 text-white rounded-[10px] sm:rounded-[12px] text-xs font-bold hover:bg-brand-700 transition-all">Смотреть</button>
+                              <a href={segment.media.videoUrl} download className="px-5 sm:px-6 py-2 glass rounded-[10px] sm:rounded-[12px] text-xs font-bold text-slate-500 hover:border-brand-500/30 transition-all border border-slate-200 dark:border-white/10">MP4</a>
                             </div>
                           </div>
                         </div>
@@ -296,6 +306,24 @@ const GeneratorPage: React.FC<{ analysis: AnalysisResult; onUpdate: (updated: An
             Введите тему для нового ролика и нажмите "Создать" для генерации сценария на основе ДНК успеха
           </p>
         </div>
+      )}
+
+      {/* Модальное окно для генерации видео */}
+      {previewModalOpen && currentScript && previewSegment && (
+        <VideoPreviewModal
+          isOpen={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          scriptId={currentScript.scriptId}
+          segmentIds={[previewSegment.id!].filter(Boolean)}
+          segments={[{
+            timeframe: previewSegment.timeframe,
+            visual: previewSegment.visual,
+            audio: previewSegment.audio
+          }]}
+          existingVideoUrl={getPreviewVideoInfo()?.videoUrl}
+          existingTaskId={getPreviewVideoInfo()?.taskId}
+          onVideoGenerated={refreshScript}
+        />
       )}
     </div>
   );

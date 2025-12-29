@@ -5,10 +5,22 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.core.files.base import ContentFile
+from django.http import HttpResponse
 import uuid
 import base64
 import json
 from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from xml.sax.saxutils import escape
+import os
+import platform
 
 from .models import Analysis, AnalysisSource, Script, ScriptSegment, MediaFile
 from .serializers import (
@@ -61,7 +73,7 @@ class AnalysisViewSet(viewsets.ModelViewSet):
             if source_type == 'url':
                 source.url = value
                 
-                # Если это YouTube или TikTok URL, скачиваем видео
+                # Если это YouTube, TikTok или Instagram URL, скачиваем видео
                 if youtube_service.is_supported_url(value):
                     try:
                         analysis.status = 'downloading'
@@ -281,9 +293,9 @@ class ScriptViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def generate_video_preview(self, request, pk=None):
-        """Генерация видео через Kie.ai для предпросмотра сегментов"""
+        """Генерация видео через Kie.ai для одного сегмента"""
         script = self.get_object()
-        segment_ids = request.data.get('segment_ids', [])  # Список ID сегментов для генерации
+        segment_ids = request.data.get('segment_ids', [])  # Список ID сегментов (должен содержать только один)
         model = request.data.get('model')  # 'sora-2-text-to-video' или 'grok-imagine/text-to-video'
         additional_notes = request.data.get('additional_notes', '')
         
@@ -293,6 +305,9 @@ class ScriptViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Берем только первый сегмент (каждый сегмент генерирует свое отдельное видео)
+        segment_id = segment_ids[0] if isinstance(segment_ids, list) else segment_ids
+        
         if model not in ['sora-2-text-to-video', 'grok-imagine/text-to-video']:
             return Response(
                 {'error': 'Неподдерживаемая модель'},
@@ -301,26 +316,23 @@ class ScriptViewSet(viewsets.ModelViewSet):
         
         try:
             kie_service = KieService()
-            segments = ScriptSegment.objects.filter(id__in=segment_ids, script=script)
+            segment = ScriptSegment.objects.filter(id=segment_id, script=script).first()
             
-            if not segments.exists():
+            if not segment:
                 return Response(
-                    {'error': 'Сегменты не найдены'},
+                    {'error': 'Сегмент не найден'},
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Формируем промпт из всех сегментов
-            prompt_parts = []
-            for segment in segments.order_by('order'):
-                prompt_parts.append(
-                    f"Таймлайн: {segment.timeframe}\n"
-                    f"Визуальный план: {segment.visual}\n"
-                    f"Текст автора: {segment.audio}"
-                )
-            
-            prompt = "\n\n---\n\n".join(prompt_parts)
+            # Формируем промпт только из текущего сегмента
+            # additional_notes будет добавлен автоматически в kie_service.create_video_task
+            prompt = (
+                f"Таймлайн: {segment.timeframe}\n"
+                f"Визуальный план: {segment.visual}\n"
+                f"Текст автора: {segment.audio}"
+            )
 
-            print(f"Prompt: {prompt}")
+            print(f"Prompt для сегмента {segment_id}: {prompt}")
             
             # Создаем задачу на генерацию видео
             # Для grok-imagine используем aspect_ratio 2:3 (вертикальный формат, portrait)
@@ -374,27 +386,23 @@ class ScriptViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
             
-            # Создаем или обновляем MediaFile для каждого сегмента
-            created_media = []
-            for segment in segments:
-                media_file, created = MediaFile.objects.get_or_create(
-                    segment=segment,
-                    media_type='video',
-                    defaults={
-                        'status': 'generating_video',
-                        'kie_task_id': task_id,
-                        'kie_model': model
-                    }
-                )
-                
-                if not created:
-                    # Обновляем существующий медиа файл
-                    media_file.status = 'generating_video'
-                    media_file.kie_task_id = task_id
-                    media_file.kie_model = model
-                    media_file.save()
-                
-                created_media.append(media_file)
+            # Создаем или обновляем MediaFile только для этого сегмента
+            media_file, created = MediaFile.objects.get_or_create(
+                segment=segment,
+                media_type='video',
+                defaults={
+                    'status': 'generating_video',
+                    'kie_task_id': task_id,
+                    'kie_model': model
+                }
+            )
+            
+            if not created:
+                # Обновляем существующий медиа файл
+                media_file.status = 'generating_video'
+                media_file.kie_task_id = task_id
+                media_file.kie_model = model
+                media_file.save()
             
             # Запускаем асинхронное ожидание завершения задачи
             # В продакшене лучше использовать Celery или другой task queue
@@ -408,17 +416,15 @@ class ScriptViewSet(viewsets.ModelViewSet):
                         if video_urls:
                             video_url = video_urls[0] if isinstance(video_urls, list) else video_urls
                             
-                            # Обновляем все MediaFile для сегментов
-                            for media_file in created_media:
-                                media_file.status = 'done'
-                                media_file.external_url = video_url
-                                media_file.save()
+                            # Обновляем MediaFile только для этого сегмента
+                            media_file.status = 'done'
+                            media_file.external_url = video_url
+                            media_file.save()
                 except Exception as e:
                     # Обновляем статус на ошибку
-                    for media_file in created_media:
-                        media_file.status = 'error'
-                        media_file.save()
-                    print(f"Ошибка генерации видео: {str(e)}")
+                    media_file.status = 'error'
+                    media_file.save()
+                    print(f"Ошибка генерации видео для сегмента {segment_id}: {str(e)}")
             
             # Запускаем в отдельном потоке
             thread = threading.Thread(target=poll_and_update)
@@ -473,3 +479,211 @@ class ScriptViewSet(viewsets.ModelViewSet):
                 {'error': f'Ошибка получения статуса: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=True, methods=['get'])
+    def download_pdf(self, request, pk=None):
+        """Генерация и скачивание PDF файла со сценарием"""
+        script = self.get_object()
+        segments = ScriptSegment.objects.filter(script=script).order_by('order')
+        
+        # Регистрируем шрифт с поддержкой кириллицы
+        # Пытаемся найти системный шрифт, поддерживающий кириллицу
+        font_name = 'DejaVuSans'
+        font_bold_name = 'DejaVuSans-Bold'
+        font_italic_name = 'DejaVuSans-Oblique'
+        
+        system = platform.system()
+        font_paths = []
+        
+        if system == 'Windows':
+            # Пути к шрифтам в Windows
+            font_paths = [
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf'),
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arialbd.ttf'),
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'ariali.ttf'),
+            ]
+            font_name = 'Arial'
+            font_bold_name = 'Arial-Bold'
+            font_italic_name = 'Arial-Italic'
+        elif system == 'Darwin':  # macOS
+            font_paths = [
+                '/System/Library/Fonts/Supplemental/Arial.ttf',
+                '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+                '/System/Library/Fonts/Supplemental/Arial Italic.ttf',
+            ]
+            font_name = 'Arial'
+            font_bold_name = 'Arial-Bold'
+            font_italic_name = 'Arial-Italic'
+        else:  # Linux
+            font_paths = [
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+            ]
+        
+        # Регистрируем шрифты, если они найдены
+        try:
+            if system == 'Windows' and os.path.exists(font_paths[0]):
+                pdfmetrics.registerFont(TTFont('Arial', font_paths[0]))
+                if os.path.exists(font_paths[1]):
+                    pdfmetrics.registerFont(TTFont('Arial-Bold', font_paths[1]))
+                if os.path.exists(font_paths[2]):
+                    pdfmetrics.registerFont(TTFont('Arial-Italic', font_paths[2]))
+            elif system == 'Darwin' and os.path.exists(font_paths[0]):
+                pdfmetrics.registerFont(TTFont('Arial', font_paths[0]))
+                if os.path.exists(font_paths[1]):
+                    pdfmetrics.registerFont(TTFont('Arial-Bold', font_paths[1]))
+                if os.path.exists(font_paths[2]):
+                    pdfmetrics.registerFont(TTFont('Arial-Italic', font_paths[2]))
+            elif os.path.exists(font_paths[0]):
+                pdfmetrics.registerFont(TTFont('DejaVuSans', font_paths[0]))
+                if os.path.exists(font_paths[1]):
+                    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', font_paths[1]))
+                if os.path.exists(font_paths[2]):
+                    pdfmetrics.registerFont(TTFont('DejaVuSans-Oblique', font_paths[2]))
+        except Exception as e:
+            # Если не удалось зарегистрировать шрифт, используем стандартные
+            # В этом случае кириллица может не отображаться
+            print(f"Предупреждение: не удалось зарегистрировать шрифт с поддержкой кириллицы: {e}")
+            font_name = 'Helvetica'
+            font_bold_name = 'Helvetica-Bold'
+            font_italic_name = 'Helvetica-Oblique'
+        
+        # Создаем буфер для PDF
+        buffer = BytesIO()
+        
+        # Создаем PDF документ
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=2*cm,
+            leftMargin=2*cm,
+            topMargin=2*cm,
+            bottomMargin=2*cm
+        )
+        
+        # Стили для PDF
+        styles = getSampleStyleSheet()
+        
+        # Создаем кастомные стили с правильными шрифтами
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#8B5CF6'),  # brand-600
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName=font_bold_name
+        )
+        
+        topic_style = ParagraphStyle(
+            'CustomTopic',
+            parent=styles['Heading2'],
+            fontSize=18,
+            textColor=colors.HexColor('#1E293B'),  # slate-900
+            spaceAfter=20,
+            alignment=TA_LEFT,
+            fontName=font_bold_name
+        )
+        
+        timeframe_style = ParagraphStyle(
+            'CustomTimeframe',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.HexColor('#64748B'),  # slate-500
+            spaceAfter=10,
+            fontName=font_bold_name
+        )
+        
+        visual_style = ParagraphStyle(
+            'CustomVisual',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.HexColor('#64748B'),  # slate-500
+            spaceAfter=15,
+            fontName=font_italic_name,
+            alignment=TA_JUSTIFY
+        )
+        
+        audio_style = ParagraphStyle(
+            'CustomAudio',
+            parent=styles['Normal'],
+            fontSize=14,
+            textColor=colors.HexColor('#0F172A'),  # slate-900
+            spaceAfter=25,
+            fontName=font_name,
+            alignment=TA_JUSTIFY,
+            leading=20
+        )
+        
+        section_title_style = ParagraphStyle(
+            'CustomSectionTitle',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#8B5CF6'),  # brand-500
+            spaceAfter=8,
+            fontName=font_bold_name,
+            textTransform='uppercase',
+            letterSpacing=2
+        )
+        
+        # Собираем содержимое PDF
+        story = []
+        
+        # Заголовок
+        story.append(Paragraph("СЦЕНАРИЙ ВИДЕО", title_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Тема сценария
+        # Используем escape только для HTML-символов, но не для кириллицы
+        topic_text = str(script.topic).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        story.append(Paragraph(topic_text, topic_style))
+        story.append(Spacer(1, 0.8*cm))
+        
+        # Сегменты сценария
+        for idx, segment in enumerate(segments, 1):
+            # Номер сегмента и таймлайн
+            timeframe_text = str(segment.timeframe).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            segment_header = f"Сегмент {idx} • {timeframe_text}"
+            story.append(Paragraph(segment_header, timeframe_style))
+            
+            # Визуальный план
+            story.append(Paragraph("ВИЗУАЛЬНЫЙ ПЛАН", section_title_style))
+            visual_text = str(segment.visual).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(visual_text, visual_style))
+            
+            # Текст автора
+            story.append(Paragraph("ТЕКСТ АВТОРА", section_title_style))
+            audio_text = str(segment.audio).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(audio_text, audio_style))
+            
+            # Разделитель между сегментами (кроме последнего)
+            if idx < segments.count():
+                story.append(Spacer(1, 0.5*cm))
+                # Горизонтальная линия
+                story.append(Table(
+                    [[Paragraph("", styles['Normal'])]],
+                    colWidths=[doc.width],
+                    style=TableStyle([
+                        ('LINEBELOW', (0, 0), (-1, -1), 1, colors.HexColor('#E2E8F0')),  # slate-200
+                    ])
+                ))
+                story.append(Spacer(1, 0.5*cm))
+        
+        # Строим PDF
+        doc.build(story)
+        
+        # Получаем PDF данные
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        # Формируем имя файла
+        filename = f"scenario_{script.id}_{script.topic[:30]}.pdf"
+        # Очищаем имя файла от недопустимых символов
+        filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
+        
+        # Создаем HTTP ответ с PDF
+        response = HttpResponse(pdf_data, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response

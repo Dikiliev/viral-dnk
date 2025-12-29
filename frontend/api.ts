@@ -200,3 +200,19 @@ export async function getVideoTaskStatus(taskId: string): Promise<{
   return data;
 }
 
+/**
+ * Скачивание PDF файла со сценарием
+ */
+export async function downloadScriptPDF(scriptId: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/scripts/${scriptId}/download_pdf/`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Ошибка генерации PDF' }));
+    throw new Error(error.error || error.detail || 'Ошибка генерации PDF');
+  }
+
+  return response.blob();
+}
+

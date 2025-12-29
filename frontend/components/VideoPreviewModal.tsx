@@ -120,15 +120,10 @@ const VideoPreviewModal: React.FC<VideoPreviewModalProps> = ({
     setStatusMessage('Создание задачи на генерацию...');
     
     try {
-      // Формируем промпт из сегментов
-      const promptParts = segments.map(seg => 
-        `Таймлайн: ${seg.timeframe}\nВизуальный план: ${seg.visual}\nТекст автора: ${seg.audio}`
-      );
-      const prompt = promptParts.join('\n\n---\n\n');
-      
+      // Отправляем только первый сегмент (каждый сегмент генерирует свое отдельное видео)
       const result = await generateVideoPreview(
         scriptId,
-        segmentIds,
+        [segmentIds[0]], // Передаем только один сегмент
         selectedModel,
         additionalNotes
       );

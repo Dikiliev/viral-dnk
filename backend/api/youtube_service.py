@@ -8,25 +8,38 @@ from django.core.files.storage import default_storage
 
 
 class YouTubeService:
-    """Сервис для скачивания видео с YouTube и TikTok через yt-dlp"""
+    """Сервис для скачивания видео с YouTube, TikTok и Instagram через yt-dlp"""
     
-    def __init__(self, cookies_file: Optional[str] = None):
+    def __init__(self, cookies_file: Optional[str] = None, instagram_cookies_file: Optional[str] = None):
         """
         Инициализация сервиса
         
         Args:
-            cookies_file: Путь к файлу cookies (Netscape формат)
+            cookies_file: Путь к файлу cookies для YouTube/TikTok (Netscape формат)
+            instagram_cookies_file: Путь к файлу cookies для Instagram
         """
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        
         if cookies_file:
             self.cookies_file = cookies_file
         else:
             # Ищем cookies.txt в директории backend
-            backend_dir = os.path.dirname(os.path.dirname(__file__))
             self.cookies_file = os.path.join(backend_dir, 'cookies.txt')
         
         # Если файл cookies не существует, просто не будем его использовать
         if not os.path.exists(self.cookies_file):
             self.cookies_file = None
+        
+        # Настройка cookies для Instagram
+        if instagram_cookies_file:
+            self.instagram_cookies_file = instagram_cookies_file
+        else:
+            # Ищем cookies_insta.txt в директории backend
+            self.instagram_cookies_file = os.path.join(backend_dir, 'cookies_insta.txt')
+        
+        # Если файл cookies для Instagram не существует, просто не будем его использовать
+        if not os.path.exists(self.instagram_cookies_file):
+            self.instagram_cookies_file = None
     
     def is_youtube_url(self, url: str) -> bool:
         """Проверка, является ли URL ссылкой на YouTube"""
@@ -49,16 +62,25 @@ class YouTubeService:
         ]
         return any(domain in url.lower() for domain in tiktok_domains)
     
+    def is_instagram_url(self, url: str) -> bool:
+        """Проверка, является ли URL ссылкой на Instagram"""
+        instagram_domains = [
+            'instagram.com',
+            'www.instagram.com',
+            'm.instagram.com'
+        ]
+        return any(domain in url.lower() for domain in instagram_domains)
+    
     def is_supported_url(self, url: str) -> bool:
         """Проверка, поддерживается ли URL для скачивания"""
-        return self.is_youtube_url(url) or self.is_tiktok_url(url)
+        return self.is_youtube_url(url) or self.is_tiktok_url(url) or self.is_instagram_url(url)
     
     def download_video(self, url: str, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """
-        Скачивание видео с YouTube или TikTok
+        Скачивание видео с YouTube, TikTok или Instagram
         
         Args:
-            url: URL видео на YouTube или TikTok
+            url: URL видео на YouTube, TikTok или Instagram
             output_dir: Директория для сохранения (если None, используется временная)
         
         Returns:
@@ -72,11 +94,14 @@ class YouTubeService:
             }
         """
         if not self.is_supported_url(url):
-            raise ValueError(f"URL не поддерживается для скачивания (YouTube или TikTok): {url}")
+            raise ValueError(f"URL не поддерживается для скачивания (YouTube, TikTok или Instagram): {url}")
         
         # Настройки yt-dlp
         # Для TikTok используем другой формат, так как там обычно нет раздельных аудио/видео потоков
         if self.is_tiktok_url(url):
+            format_selector = 'best[ext=mp4]/best'
+        elif self.is_instagram_url(url):
+            # Для Instagram используем лучший доступный формат
             format_selector = 'best[ext=mp4]/best'
         else:
             # Для YouTube можно использовать лучший формат с аудио
@@ -90,9 +115,15 @@ class YouTubeService:
             'extract_flat': False,
         }
         
-        # Добавляем cookies если файл существует
-        if self.cookies_file and os.path.exists(self.cookies_file):
-            ydl_opts['cookiefile'] = self.cookies_file
+        # Добавляем cookies в зависимости от платформы
+        if self.is_instagram_url(url):
+            # Для Instagram используем специальные cookies
+            if self.instagram_cookies_file and os.path.exists(self.instagram_cookies_file):
+                ydl_opts['cookiefile'] = self.instagram_cookies_file
+        else:
+            # Для YouTube и TikTok используем обычные cookies
+            if self.cookies_file and os.path.exists(self.cookies_file):
+                ydl_opts['cookiefile'] = self.cookies_file
         
         # Используем временную директорию если не указана
         if output_dir is None:
