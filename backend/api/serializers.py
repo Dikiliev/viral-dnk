@@ -75,6 +75,12 @@ class ScriptSegmentSerializer(serializers.ModelSerializer):
             'status': latest_media.status,
         }
         
+        # Добавляем информацию о задаче Kie.ai
+        if latest_media.kie_task_id:
+            result['kieTaskId'] = latest_media.kie_task_id
+        if latest_media.kie_model:
+            result['kieModel'] = latest_media.kie_model
+        
         # Добавляем URL в зависимости от типа
         if latest_media.image_file:
             request = self.context.get('request')

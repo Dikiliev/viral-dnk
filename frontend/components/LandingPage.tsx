@@ -1,8 +1,12 @@
 import React from 'react';
+import ShaderBackground from './ui/shader-background';
 
 const LandingPage: React.FC<{ onStart: () => void }> = ({ onStart }) => {
   return (
-    <div className="flex flex-col items-center py-16 relative overflow-hidden">
+    <div className="flex flex-col items-center py-16 relative min-h-screen w-full">
+      {/* Shader Background Effect - скроллируется вместе со страницей через uniform */}
+      <ShaderBackground />
+      
       {/* Animated Background Gradient */}
       <div className="absolute top-0 -z-10 w-full h-[600px] bg-[radial-gradient(ellipse_at_center,_var(--accent-glow),_transparent_70%)] opacity-30 animate-pulse"></div>
       

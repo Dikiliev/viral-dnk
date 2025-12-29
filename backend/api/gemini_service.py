@@ -9,6 +9,7 @@ from google.genai import types as genai_types
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 import io
+from .kie_service import KieService
 
 
 class GeminiService:
@@ -298,77 +299,6 @@ class GeminiService:
         
         return self._with_retries(_generate)
     
-    def generate_image(self, prompt: str) -> bytes:
-        """
-        Генерация изображения
-        
-        Args:
-            prompt: Описание изображения
-        
-        Returns:
-            Bytes изображения
-        """
-        response = self.client.models.generate_content(
-            model="gemini-3-pro-image-preview",
-            contents=[genai_types.Part(text=f"Cinematic vertical 9:16 frame: {prompt}")],
-            config=genai_types.GenerateContentConfig(
-                image_config=genai_types.ImageConfig(
-                    aspect_ratio="9:16",
-                    image_size="1K"
-                )
-            ),
-        )
-        
-        data = None
-        if hasattr(response, 'candidates') and response.candidates:
-            for candidate in response.candidates:
-                if hasattr(candidate, 'content') and candidate.content:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
-                            data = part.inline_data.data
-                            break
-                if data:
-                    break
-        
-        if not data:
-            raise ValueError("Image generation failed")
-        
-        return base64.b64decode(data)
-    
-    def generate_video_from_image(self, image_base64: str, prompt: str) -> str:
-        """
-        Генерация видео из изображения
-        
-        Args:
-            image_base64: Base64 строка изображения
-            prompt: Описание видео
-        
-        Returns:
-            URL для скачивания видео
-        """
-        operation = self.client.models.generate_videos(
-            model="veo-3.1-fast-generate-preview",
-            prompt=prompt,
-            image=genai_types.Image(
-                image_bytes=image_base64,
-                mime_type="image/png",
-            ),
-            config=genai_types.GenerateVideosConfig(
-                number_of_videos=1,
-                resolution="720p",
-                aspect_ratio="9:16"
-            )
-        )
-        
-        while not operation.done:
-            time.sleep(10)
-            operation = self.client.operations.get(operation.name)
-        
-        download_link = operation.response.generated_videos[0].video.uri
-        api_key = os.environ.get('GEMINI_API_KEY')
-        return f"{download_link}&key={api_key}"
-    
-    def generate_speech(self, text: str) -> bytes:
         """
         Генерация речи из текста
         

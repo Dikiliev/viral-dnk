@@ -24,3 +24,4 @@ db.sqlite3
 .vscode/
 
 # Environment variables
+.env

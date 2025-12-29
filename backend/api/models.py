@@ -136,6 +136,10 @@ class MediaFile(models.Model):
     # URL для внешних ресурсов (например, сгенерированных через API)
     external_url = models.URLField(max_length=2000, blank=True, null=True)
     
+    # Информация о задаче Kie.ai
+    kie_task_id = models.CharField(max_length=255, blank=True, null=True)
+    kie_model = models.CharField(max_length=100, blank=True, null=True)  # 'sora-2-text-to-video' или 'grok-imagine/text-to-video'
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

@@ -150,10 +150,10 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen selection:bg-purple-500/30 transition-colors duration-300">
+    <div className="min-h-screen flex flex-col selection:bg-purple-500/30 transition-colors duration-300">
       <Navigation theme={theme} toggleTheme={toggleTheme} />
       
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="flex-1 max-w-7xl mx-auto px-6 py-12 w-full">
         <Routes>
           <Route path="/" element={<LandingPage onStart={() => navigate('/analyze')} />} />
           <Route path="/analyze" element={<AnalysisWrapper onComplete={saveToHistory} />} />
@@ -172,7 +172,7 @@ const AppContent: React.FC = () => {
         </Routes>
       </main>
       
-      <footer className="border-t border-black/5 dark:border-white/5 py-12 mt-20">
+      <footer className="border-t border-black/5 dark:border-white/5 py-12 mt-auto">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">

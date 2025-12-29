@@ -147,3 +147,56 @@ export async function generateMediaForSegment(
   };
 }
 
+/**
+ * Генерация видео предпросмотра через Kie.ai
+ */
+export async function generateVideoPreview(
+  scriptId: string,
+  segmentIds: string[],
+  model: string,
+  additionalNotes?: string
+): Promise<{ task_id: string; status: string; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/scripts/${scriptId}/generate_video_preview/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      segment_ids: segmentIds,
+      model: model,
+      additional_notes: additionalNotes || '',
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Ошибка генерации видео' }));
+    throw new Error(error.error || error.detail || 'Ошибка генерации видео');
+  }
+
+  return response.json();
+}
+
+/**
+ * Получение статуса задачи генерации видео
+ */
+export async function getVideoTaskStatus(taskId: string): Promise<{
+  state: string;
+  resultUrls?: string[];
+  failMsg?: string;
+}> {
+  const response = await fetch(`${API_BASE_URL}/scripts/video_task_status/?task_id=${taskId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Ошибка получения статуса' }));
+    throw new Error(error.error || error.detail || 'Ошибка получения статуса');
+  }
+
+  const data = await response.json();
+  return data;
+}
+

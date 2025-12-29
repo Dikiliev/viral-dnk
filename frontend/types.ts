@@ -47,6 +47,8 @@ export interface ScriptSegment {
     videoUrl?: string;
     audioUrl?: string;
     status: 'idle' | 'generating_image' | 'generating_video' | 'generating_audio' | 'done' | 'error';
+    kieTaskId?: string;
+    kieModel?: string;
   };
 }
 
