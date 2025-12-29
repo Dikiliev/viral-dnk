@@ -35,7 +35,7 @@ class YouTubeService:
             self.instagram_cookies_file = instagram_cookies_file
         else:
             # Ищем cookies_insta.txt в директории backend
-            self.instagram_cookies_file = os.path.join(backend_dir, 'cookies_insta.txt')
+            self.instagram_cookies_file = os.path.join(backend_dir, 'cookies_insta copy.txt')
         
         # Если файл cookies для Instagram не существует, просто не будем его использовать
         if not os.path.exists(self.instagram_cookies_file):
